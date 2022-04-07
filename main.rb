@@ -73,11 +73,17 @@ def stream_download(url:, to:, ttl: 3)
   end
 end
 
+out_file = "download.bin"
+
 report = MemoryProfiler.report do
   # Test files used from https://fastest.fish/test-files
-  save_from_url(url: "https://github.com/yourkin/fileupload-fastapi/raw/a85a697cab2f887780b3278059a0dd52847d80f3/tests/data/test-5mb.bin", to: "download.bin")
+  save_from_url(url: "https://github.com/yourkin/fileupload-fastapi/raw/a85a697cab2f887780b3278059a0dd52847d80f3/tests/data/test-5mb.bin", to: out_file)
   # save_from_url(url: "https://speed.hetzner.de/1GB.bin", to: "download-2.bin")
   # save_from_url(url: "https://speed.hetzner.de/10GB.bin", to: "download-3.bin")
 end
 
 report.pretty_print(scale_bytes: true, retained_strings: 0, allocated_strings: 0, detailed_report: false)
+
+data = File.read(out_file)
+checksum = Digest::SHA256.hexdigest(data)
+puts checksum
