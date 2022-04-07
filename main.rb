@@ -1,5 +1,6 @@
 require 'net/http'
 require 'open-uri'
+require 'memory_profiler'
 
 def save_from_url(url:, to:, ttl: 3, timeout_retries: 5)
   attempt = 1
@@ -72,4 +73,10 @@ def stream_download(url:, to:, ttl: 3)
   end
 end
 
-save_from_url(url: "https://github.com/yourkin/fileupload-fastapi/raw/a85a697cab2f887780b3278059a0dd52847d80f3/tests/data/test-5mb.bin", to: "download.bin")
+report = MemoryProfiler.report do
+  save_from_url(url: "https://github.com/yourkin/fileupload-fastapi/raw/a85a697cab2f887780b3278059a0dd52847d80f3/tests/data/test-5mb.bin", to: "download.bin")
+  # save_from_url(url: "https://speed.hetzner.de/1GB.bin", to: "download-2.bin")
+  # save_from_url(url: "https://speed.hetzner.de/10GB.bin", to: "download-3.bin")
+end
+
+report.pretty_print(scale_bytes: true, retained_strings: 0, allocated_strings: 0, detailed_report: false)
