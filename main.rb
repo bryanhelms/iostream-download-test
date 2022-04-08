@@ -45,32 +45,28 @@ def basic_download(url:, to:, ttl: 3)
 end
 
 def stream_download(url:, to:, ttl: 3)
-  File.open(to, "wb") do |f|
-    begin
-      url_data = URI.open(url, "rb", :redirect => false)
-      if (url_data.status[0] == "200")
-        expected_bytes = url_data.meta["content-length"].to_i
-        bytes_copied = IO.copy_stream(url_data, f)
+  url_data = URI.parse(url).open("rb", redirect: false)
+  if url_data.status[0] == "200"
+    expected_bytes = url_data.meta["content-length"].to_i
+    File.open(to, "wb") do |f|
+      bytes_copied = IO.copy_stream(url_data, f)
 
-        if (expected_bytes != bytes_copied)
-          puts "Bytes mismatch!!"
-          # TODO This should have some other kind of error handling, maybe file delete
-        end
-      else
-        [false, url_data.status[0]]
+      if expected_bytes != bytes_copied
+        # TODO: Need to figure out how we want to handle this error
       end
-
-    rescue OpenURI::HTTPRedirect => redirect
-      if ttl.positive?
-        save_from_url url: redirect.uri.to_s, to: to, ttl: ttl - 1
-      else
-        [false, redirect.io.status[0]]
-      end
-    rescue OpenURI::HTTPError => http_err
-      [false, http_err.io.status[0]]
     end
-
+    [true, "200"]
+  else
+    [false, url_data.status[0]]
   end
+rescue OpenURI::HTTPRedirect => e
+  if ttl.positive?
+    save_from_url url: e.uri.to_s, to: to, ttl: ttl - 1
+  else
+    [false, e.io.status[0]]
+  end
+rescue OpenURI::HTTPError => e
+  [false, e.io.status[0]]
 end
 
 out_file = "download.bin"
