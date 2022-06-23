@@ -2,8 +2,11 @@ require 'net/http'
 require 'open-uri'
 require 'memory_profiler'
 require 'down'
+require_relative "download_file_size_error"
 
-def save_from_url(url:, to:, ttl: 3, timeout_retries: 5)
+MEGABYTE = 1024 * 1024
+
+def save_from_url(url:, to:, ttl: 3, timeout_retries: 5, max_file_size: nil)
   attempt = 1
 
   begin
@@ -11,7 +14,7 @@ def save_from_url(url:, to:, ttl: 3, timeout_retries: 5)
     # stream_download(url: url, to: to, ttl: ttl)
     # improved_download(url: url, to: to, ttl: ttl)
     # down_download(url: url, to: to, ttl: ttl)
-    down_chunked(url: url, to: to, ttl: ttl)
+    down_chunked(url: url, to: to, ttl: ttl, max_file_size: max_file_size)
   rescue Down::TimeoutError, Net::ReadTimeout => e
     attempt += 1
     raise e if attempt > timeout_retries
@@ -21,7 +24,7 @@ def save_from_url(url:, to:, ttl: 3, timeout_retries: 5)
   end
 end
 
-def basic_download(url:, to:, ttl: 3)
+def basic_download(url:, to:, ttl: 3, max_file_size: nil)
   res = Net::HTTP.get_response(URI(url)) do |response|
     if response.is_a?(Net::HTTPSuccess)
       File.open(to, "wb") do |f|
@@ -48,7 +51,7 @@ def basic_download(url:, to:, ttl: 3)
   end
 end
 
-def improved_download(url:, to:, ttl: 3)
+def improved_download(url:, to:, ttl: 3, max_file_size: nil)
   uri = URI(url)
 
   http = Net::HTTP.new(uri.host, uri.port)
@@ -82,7 +85,7 @@ def improved_download(url:, to:, ttl: 3)
   end
 end
 
-def stream_download(url:, to:, ttl: 3)
+def stream_download(url:, to:, ttl: 3, max_file_size: nil)
   url_data = URI.parse(url).open("rb", redirect: false)
   if url_data.status[0] == "200"
     expected_bytes = url_data.meta["content-length"].to_i
@@ -107,7 +110,7 @@ rescue OpenURI::HTTPError => e
   [false, e.io.status[0]]
 end
 
-def down_download(url:, to:, ttl: 3)
+def down_download(url:, to:, ttl: 3, max_file_size: nil)
   uri = URI.parse(url);
   dl = Down.download(uri, destination: to, max_redirects: 0)
 
@@ -119,9 +122,14 @@ rescue Down::NotFound, Down::ClientError, Down::ServerError, Down::ResponseError
   [false, e.response.code]
 end
 
-def down_chunked(url:, to:, ttl: 3)
+def down_chunked(url:, to:, ttl: 3, max_file_size: nil)
   uri = URI.parse(url)
   remote_file = Down.open(uri, rewindable: false, max_redirects: ttl)
+
+  if !max_file_size.nil? && ((remote_file.size > max_file_size) || remote_file.size.nil?)
+    raise DownloadFileSizeError.new(max_file_size: max_file_size, file_size: remote_file.size)
+  end
+
   File.open(to, "wb") do |f|
     remote_file.each_chunk do |chunk|
       f.write(chunk)
@@ -138,9 +146,10 @@ end
 
 out_file = "download.bin"
 
+begin
 # report = MemoryProfiler.report do
   # Test files used from https://fastest.fish/test-files
-  result = save_from_url(url: "https://github.com/yourkin/fileupload-fastapi/raw/a85a697cab2f887780b3278059a0dd52847d80f3/tests/data/test-5mb.bin", to: out_file)
+  result = save_from_url(url: "https://github.com/yourkin/fileupload-fastapi/raw/a85a697cab2f887780b3278059a0dd52847d80f3/tests/data/test-5mb.bin", to: out_file, max_file_size: 4 * MEGABYTE)
   # result = save_from_url(url: "https://speed.hetzner.de/1GB.bin", to: "download-2.bin")
   # result = save_from_url(url: "https://speed.hetzner.de/10GB.bin", to: "download-3.bin")
   p result
@@ -148,6 +157,9 @@ out_file = "download.bin"
 
 # report.pretty_print(scale_bytes: true, retained_strings: 0, allocated_strings: 0, detailed_report: false)
 
-data = File.read(out_file)
-checksum = Digest::SHA256.hexdigest(data)
-puts checksum
+  data = File.read(out_file)
+  checksum = Digest::SHA256.hexdigest(data)
+  puts checksum
+rescue DownloadFileSizeError => e
+  puts "The file was too big: #{e.file_size}"
+end
